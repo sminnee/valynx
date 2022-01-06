@@ -1,0 +1,22 @@
+* {
+  box-sizing: border-box;
+  font-family: Helvetica, Arial;
+}
+
+body,
+#root {
+  height: 100vh;
+  background-color: rgb(222, 210, 230);
+}
+
+.form-item-vert {
+  margin: 16px 8px;
+}
+
+.fill-height {
+  height: 100%;
+}
+
+.MuiPaper-root {
+  padding: 16px;
+}

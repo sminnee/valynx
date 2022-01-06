@@ -21,7 +21,7 @@ const envVarDefines = { ENV_VARS: JSON.stringify(includedVars) };
 const paths = {
   appBuild: "build",
   appHtml: "public/index.html",
-  appIndexJs: "./src/index.tsx",
+  appIndexJs: "./src/app/index.tsx",
   appSrc: "src",
   publicUrlOrPath: process.env.PUBLIC_URL || "/",
 };
