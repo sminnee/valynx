@@ -90,6 +90,8 @@ const recordProp = <T, K extends keyof T>(key: K): Lens<T, T[K]> => [
   }),
 ];
 
+// Put it altogether: create an appropriate value link, based on the value passed
+
 export function createValueLink<T>(value: T, updater: Updater<T>): ValueLink<T> {
   // Build a BaseValueLink
   const base = <U>(value: U, updater: Updater<U>): BaseValueLink<U> => ({
