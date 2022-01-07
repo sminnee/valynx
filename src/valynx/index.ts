@@ -124,9 +124,5 @@ export function createValueLink<T>(value: T, updater: Updater<T>): ValueLink<T> 
 
 export function createFromReactState<T>(statePair: ReactState<T>) {
   const [value, setter] = statePair;
-  return createValueLink(value, (updater) => {
-    const newVal = updater(value);
-    console.log("updating state to ", newVal);
-    setter(newVal);
-  });
+  return createValueLink(value, (updater) => setter(updater(value)));
 }

@@ -35,7 +35,7 @@ const LinkedField = (props: { state: ValueLink<string>; label?: string }) => {
  * Detail form for editing a person - the state for each field is straightforward to pass
  * State of a single person is passed, without reference to app state
  */
-const DetailForm = (props: { state: ValueLink<Person> }) => (
+const PersonDetail = (props: { state: ValueLink<Person> }) => (
   <Paper className="fill-height">
     <LinkedField label="Name" state={props.state.name} />
     <LinkedField label="Email" state={props.state.email} />
@@ -47,20 +47,24 @@ const DetailForm = (props: { state: ValueLink<Person> }) => (
  * Full AppState is passed, as we need to deal with both the items and the currently selected item.
  * @param props Control
  */
-const PersonList = (props: { state: ValueLink<AppState> }) => (
+const PersonList = (props: { state: ValueLink<AppState> }) => {
   // props.state.edata nad props.state.current return more value links, and we call .get() and .set() on them directly
 
-  <Paper className="fill-height">
-    <DataGrid
-      columns={[
-        { field: "name", width: 200 },
-        { field: "email", width: 200 },
-      ]}
-      rows={props.state.data.get()}
-      onRowClick={(person) => props.state.current.set(person.row.id)}
-    />
-  </Paper>
-);
+  const state = props.state; //.props();
+
+  return (
+    <Paper className="fill-height">
+      <DataGrid
+        columns={[
+          { field: "name", width: 200 },
+          { field: "email", width: 200 },
+        ]}
+        rows={state.data.get()}
+        onRowClick={(person) => state.current.set(person.row.id)}
+      />
+    </Paper>
+  );
+};
 
 /**
  * Our simple test app
@@ -94,7 +98,7 @@ const App = () => {
             <PersonList state={state} />
           </Grid>
           <Grid item xs={12} sm={6}>
-            {currentPerson && <DetailForm state={currentPerson} />}
+            {currentPerson && <PersonDetail state={currentPerson} />}
           </Grid>
         </Grid>
       </Box>
