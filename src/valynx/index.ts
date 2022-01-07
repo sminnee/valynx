@@ -27,6 +27,7 @@ type BaseValueLink<T> = {
   value: T;
   set: Setter<T>;
   update: Updater<T>;
+  apply: <Child>(lens: Lens<T, Child>) => ValueLink<Child>;
 };
 
 type AnyRecord = Record<any, any>;
@@ -61,42 +62,54 @@ export type ValueLink<T> = [T] extends [Array<any>] // [p] needed around element
 
 export type ValueLink2<T> = BaseValueLink<T>;
 
-// Immutably update an array item
-function updateItem<V>(arr: V[], idx: number, updater: UpdaterFn<V>) {
-  return [...arr.slice(0, idx), updater(arr[idx]), ...arr.slice(idx + 1)];
-}
+/**
+ * Define a lens that can be applied to a value link to produce another value link
+ * The first element of the tuple gets the child value, given the base
+ * The second element of the tuple, given a base value and the updater to apply to the child, reutrns a modified base
+ */
+type Lens<Base, Child> = [(base: Base) => Child, (base: Base, updater: UpdaterFn<Child>) => Base];
 
-// Immutably update a record property
-function updateProp<K extends keyof V, V extends AnyRecord>(record: V, key: K, updater: UpdaterFn<V[K]>) {
-  return {
+// Lenses
+
+/**
+ * Lens for modifying an element of an array
+ */
+const arrayItem = <T>(idx: number): Lens<T[], T> => [
+  (arr) => arr[idx],
+  (arr, updater) => [...arr.slice(0, idx), updater(arr[idx]), ...arr.slice(idx + 1)],
+];
+
+/**
+ * Lens for modifying a property of a record
+ */
+const recordProp = <T, K extends keyof T>(key: K): Lens<T, T[K]> => [
+  (record) => record[key],
+  (record, updater) => ({
     ...record,
     [key]: updater(record[key]),
-  };
-}
+  }),
+];
 
 export function createValueLink<T>(value: T, updater: Updater<T>): ValueLink<T> {
+  // Build a BaseValueLink
   const base = <U>(value: U, updater: Updater<U>): BaseValueLink<U> => ({
     value: value,
     set: (value) => updater((_) => value),
     update: updater,
+    apply: ([getChild, updateChild]) =>
+      createValueLink(getChild(value), (fn) => updater((base) => updateChild(base, fn))),
   });
 
   function addArrayMethods<U>(base: BaseValueLink<U[]>): ArrayValueLink<U> {
     return {
       ...base,
 
-      item: (idx) =>
-        createValueLink(base.value[idx], (itemUpdater) => base.update((arr) => updateItem(arr, idx, itemUpdater))),
-      items: () =>
-        base.value.map((item, idx) =>
-          createValueLink(item, (itemUpdater) => base.update((arr) => updateItem(arr, idx, itemUpdater)))
-        ),
+      item: (idx) => base.apply(arrayItem(idx)),
+      items: () => base.value.map((_, idx) => base.apply(arrayItem(idx))),
       find: (predicate) => {
         const idx = base.value.findIndex(predicate);
         if (idx !== -1) {
-          return createValueLink(base.value[idx], (itemUpdater) =>
-            base.update((arr) => updateItem(arr, idx, itemUpdater))
-          );
+          return base.apply(arrayItem(idx));
         } else {
           return null;
         }
@@ -108,14 +121,11 @@ export function createValueLink<T>(value: T, updater: Updater<T>): ValueLink<T> 
     return {
       ...base,
 
-      prop: (name) =>
-        createValueLink(base.value[name], (itemUpdater) => base.update((arr) => updateProp(arr, name, itemUpdater))),
+      prop: (name) => base.apply(recordProp(name)),
       props: () => {
         let built: any = {};
         Object.keys(base.value).forEach((name) => {
-          built[name] = createValueLink(base.value[name as keyof U], (itemUpdater) =>
-            base.update((arr) => updateProp(arr, name as keyof U, itemUpdater))
-          );
+          built[name] = base.apply(recordProp(name as keyof U));
         });
         return built;
       },
