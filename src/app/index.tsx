@@ -26,7 +26,7 @@ const LinkedField = (props: { state: ValueLink<string>; label?: string }) => {
 
   return (
     <div className="form-item-vert">
-      <TextField value={state.get()} onChange={(e) => state.set(e.currentTarget.value)} {...fieldProps} />
+      <TextField value={state.value} onChange={(e) => state.set(e.currentTarget.value)} {...fieldProps} />
     </div>
   );
 };
@@ -35,12 +35,15 @@ const LinkedField = (props: { state: ValueLink<string>; label?: string }) => {
  * Detail form for editing a person - the state for each field is straightforward to pass
  * State of a single person is passed, without reference to app state
  */
-const PersonDetail = (props: { state: ValueLink<Person> }) => (
-  <Paper className="fill-height">
-    <LinkedField label="Name" state={props.state.name} />
-    <LinkedField label="Email" state={props.state.email} />
-  </Paper>
-);
+const PersonDetail = (props: { state: ValueLink<Person> }) => {
+  const state = props.state.props();
+  return (
+    <Paper className="fill-height">
+      <LinkedField label="Name" state={state.name} />
+      <LinkedField label="Email" state={state.email} />
+    </Paper>
+  );
+};
 
 /**
  * The list of people.
@@ -48,7 +51,7 @@ const PersonDetail = (props: { state: ValueLink<Person> }) => (
  * @param props Control
  */
 const PersonList = (props: { state: ValueLink<AppState> }) => {
-  // props.state.edata nad props.state.current return more value links, and we call .get() and .set() on them directly
+  // props.state.edata nad props.state.current return more value links, and we call .value and .set() on them directly
 
   const state = props.state; //.props();
 
@@ -59,8 +62,8 @@ const PersonList = (props: { state: ValueLink<AppState> }) => {
           { field: "name", width: 200 },
           { field: "email", width: 200 },
         ]}
-        rows={state.data.get()}
-        onRowClick={(person) => state.current.set(person.row.id)}
+        rows={state.prop("data").value}
+        onRowClick={(person) => state.prop("current").set(person.row.id)}
       />
     </Paper>
   );
@@ -85,7 +88,8 @@ const App = () => {
   // Find the current person, returns a value link to a person or null, making it easy to conditionally show the form below
   // state.data.find(predicate) returns a value link to the record matching that predicate, or null. Updates to the result
   // will be saved back into the global state
-  const currentPerson = state.current.get() === null ? null : state.data.find((row) => row.id === state.current.get());
+  const currentPersonId = state.prop("current").value;
+  const currentPerson = currentPersonId ? state.prop("data").find((row) => row.id === currentPersonId) : null;
 
   return (
     <Box sx={{ display: "grid", height: "100%", gridTemplateRows: "80px auto" }}>

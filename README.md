@@ -71,14 +71,14 @@ const state = createFromReactState(reactState); // Returns type ValueLink<AppSta
 
 ### What is a value link
 
-- `state.get()` returns the current state value
+- `state.value` contains the current state value
 - `state.set(newState)` updates the state without reference to the old value
 - `state.update(oldState => newState)` updates the state using a function that is passed the old
   state value
 
 ### Deriving nested value links
 
-Valynx power is that you can create _nested_ value links, with both a getter, and a setter that
+Valynx power is that you can create _nested_ value links, with both a value, and a setter that
 mutates the global state.
 
 For objects:
@@ -138,7 +138,7 @@ const TextField = (props: { state: ValueLink<string>; label?: string }) => {
   const { state, ...fieldProps } = props;
 
   const inputField = (
-    <input value={state.get()} onChange={(e) => state.set(e.currentTarget.value)} />
+    <input value={state.value} onChange={(e) => state.set(e.currentTarget.value)} />
   );
 
   if (props.state.label) {
