@@ -18,7 +18,7 @@ type UpdaterFn<T> = (oldVal: T) => T;
  */
 type Updater<T> = (updater: UpdaterFn<T>) => void;
 
-type ReactState<T> = [T, Setter<T>];
+type ReactState<T> = [T, Updater<T>];
 
 /**
  * Basic value link on a simple type - not a record or an array
@@ -59,8 +59,6 @@ export type ValueLink<T> = [T] extends [Array<any>] // [p] needed around element
   : [T] extends [AnyRecord]
   ? RecordValueLink<T>
   : BaseValueLink<T>;
-
-export type ValueLink2<T> = BaseValueLink<T>;
 
 /**
  * Define a lens that can be applied to a value link to produce another value link
@@ -144,6 +142,6 @@ export function createValueLink<T>(value: T, updater: Updater<T>): ValueLink<T> 
 }
 
 export function createFromReactState<T>(statePair: ReactState<T>) {
-  const [value, setter] = statePair;
-  return createValueLink(value, (updater) => setter(updater(value)));
+  const [value, updater] = statePair;
+  return createValueLink(value, updater);
 }
