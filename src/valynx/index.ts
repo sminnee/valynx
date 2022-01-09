@@ -1,29 +1,28 @@
-/**
- * Value links
- */
+//////////////////////////////////////////
+// Types
 
 /**
  * A function that will set the state to a new value
  */
-type Setter<T> = (newVal: T) => void;
+export type Setter<T> = (newVal: T) => void;
 
 /**
  * The updater function passed to a state updater.
  * Receives an old value and returns a new value.
  */
-type UpdaterFn<T> = (oldVal: T) => T;
+export type UpdaterFn<T> = (oldVal: T) => T;
 
 /**
  * A function that will apply an updater to the state
  */
-type Updater<T> = (updater: UpdaterFn<T>) => void;
+export type Updater<T> = (updater: UpdaterFn<T>) => void;
 
 type ReactState<T> = [T, Updater<T>];
 
 /**
  * Basic value link on a simple type - not a record or an array
  */
-type BaseValueLink<T> = {
+export type BaseValueLink<T> = {
   value: T;
   set: Setter<T>;
   update: Updater<T>;
@@ -65,14 +64,15 @@ export type ValueLink<T> = [T] extends [Array<any>] // [p] needed around element
  * The first element of the tuple gets the child value, given the base
  * The second element of the tuple, given a base value and the updater to apply to the child, reutrns a modified base
  */
-type Lens<Base, Child> = [(base: Base) => Child, (base: Base, updater: UpdaterFn<Child>) => Base];
+export type Lens<Base, Child> = [(base: Base) => Child, (base: Base, updater: UpdaterFn<Child>) => Base];
 
+//////////////////////////////////////////
 // Lenses
 
 /**
  * Lens for modifying an element of an array
  */
-const arrayItem = <T>(idx: number): Lens<T[], T> => [
+export const arrayItem = <T>(idx: number): Lens<T[], T> => [
   (arr) => arr[idx],
   (arr, updater) => [...arr.slice(0, idx), updater(arr[idx]), ...arr.slice(idx + 1)],
 ];
@@ -80,7 +80,7 @@ const arrayItem = <T>(idx: number): Lens<T[], T> => [
 /**
  * Lens for modifying a property of a record
  */
-const recordProp = <T, K extends keyof T>(key: K): Lens<T, T[K]> => [
+export const recordProp = <T, K extends keyof T>(key: K): Lens<T, T[K]> => [
   (record) => record[key],
   (record, updater) => ({
     ...record,
@@ -88,8 +88,13 @@ const recordProp = <T, K extends keyof T>(key: K): Lens<T, T[K]> => [
   }),
 ];
 
-// Put it altogether: create an appropriate value link, based on the value passed
+//////////////////////////////////////////
+// Value link constructors
 
+/**
+ * Create a ValueLink for the given value/updater pair
+ * Ensures that arrays or records have extra methods
+ */
 export function createValueLink<T>(value: T, updater: Updater<T>): ValueLink<T> {
   // Build a BaseValueLink
   const base = <U>(value: U, updater: Updater<U>): BaseValueLink<U> => ({
@@ -100,6 +105,7 @@ export function createValueLink<T>(value: T, updater: Updater<T>): ValueLink<T> 
       createValueLink(getChild(value), (fn) => updater((base) => updateChild(base, fn))),
   });
 
+  // Add array-specific methods to a BaseValueLink
   function addArrayMethods<U>(base: BaseValueLink<U[]>): ArrayValueLink<U> {
     return {
       ...base,
@@ -117,6 +123,7 @@ export function createValueLink<T>(value: T, updater: Updater<T>): ValueLink<T> 
     };
   }
 
+  // Add record-specific methods to a BaseValueLink
   function addRecordMethods<U>(base: BaseValueLink<U>): RecordValueLink<U> {
     return {
       ...base,
@@ -132,15 +139,21 @@ export function createValueLink<T>(value: T, updater: Updater<T>): ValueLink<T> 
     };
   }
 
+  // Polymorphic creation of value-links for array or records
   if (Array.isArray(value)) {
     return addArrayMethods(base(value as any[], updater as unknown as Updater<any[]>)) as ValueLink<T>;
   } else if (value && typeof value === "object" && !("get" in value) && !("set" in value)) {
     return addRecordMethods(base(value, updater)) as ValueLink<T>;
   }
 
+  // Default
   return base(value, updater) as ValueLink<T>;
 }
 
+/**
+ * Create a ValueLink for the given value/updater pair
+ * Ensures that arrays or records have extra methods
+ */
 export function createFromReactState<T>(statePair: ReactState<T>) {
   const [value, updater] = statePair;
   return createValueLink(value, updater);
