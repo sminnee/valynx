@@ -3,10 +3,19 @@
   font-family: Helvetica, Arial;
 }
 
-body,
+body {
+  margin: 0;
+}
+
 #root {
   height: 100vh;
   background-color: rgb(222, 210, 230);
+  margin: 0;
+  padding: 24px;
+}
+
+#root h1 {
+  margin: 0;
 }
 
 .form-item-vert {
