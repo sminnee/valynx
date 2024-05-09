@@ -39,6 +39,11 @@ type RecordValueLink<T extends AnyRecord> = BaseValueLink<T> & {
   props: () => {
     [P in keyof T]: ValueLink<T[P]>;
   };
+  addProp: <K extends string, V>(name: K, value: ValueLink<V>) => RecordValueLink<T & { [col in K]: V }>;
+  addOptProp: <K extends string, V>(
+    name: K,
+    value: ValueLink<V> | null
+  ) => RecordValueLink<T & { [col in K]: V | null }>;
 };
 
 /**
@@ -47,7 +52,10 @@ type RecordValueLink<T extends AnyRecord> = BaseValueLink<T> & {
 type ArrayValueLink<T> = BaseValueLink<T[]> & {
   item: (idx: number) => ValueLink<T>;
   items: () => ValueLink<T>[];
+  map: <U>(mapper: (orig: ValueLink<T>) => ValueLink<U>) => ArrayValueLink<U>;
   find: (predicate: (item: T) => boolean) => ValueLink<T> | null;
+  lookup: <K extends keyof T>(idLink: ValueLink<T[K]>, idCol: K) => ValueLink<T> | null;
+  lookupMany: <K extends keyof T>(idsLink: ValueLink<Array<T[K]>>, idCol: K) => ArrayValueLink<T> | null;
 };
 
 /**
@@ -112,7 +120,7 @@ export function createValueLink<T>(value: T, updater: Updater<T>): ValueLink<T> 
 
       item: (idx) => base.apply(arrayItem(idx)),
       items: () => base.value.map((_, idx) => base.apply(arrayItem(idx))),
-      find: (predicate) => {
+      find: (predicate)  {
         const idx = base.value.findIndex(predicate);
         if (idx !== -1) {
           return base.apply(arrayItem(idx));
@@ -120,6 +128,27 @@ export function createValueLink<T>(value: T, updater: Updater<T>): ValueLink<T> 
           return null;
         }
       },
+      lookup: (idLink, idCol)  => {
+        const idx = base.value.findIndex((row) => row[idCol] == idLink.value);
+        if (idx !== -1) {
+          return base.apply(arrayItem(idx));
+        } else {
+          return null;
+        }
+      },
+      lookup: (idsLink, idCol)  => {
+        return idsLink.value.map(id => {
+        const idx = base.value.findIndex((row) => row[idCol] == id);
+        if (idx !== -1) {
+          return base.apply(arrayItem(idx));
+        } else {
+          return null;
+        }
+      })
+      },
+      map: (mapper) => {
+        return base.value.map((_, idx) => mapper(base.apply(arrayItem(idx)))),
+      }
     };
   }
 

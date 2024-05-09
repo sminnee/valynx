@@ -1,7 +1,7 @@
 import * as React from "react";
 import ReactDOM from "react-dom";
 import { Box, Paper, TextField } from "@mui/material";
-import { DataGrid, GridColumns, GridSelectionModel } from "@mui/x-data-grid";
+import { DataGrid, GridColumns, GridSelectionModel, GridValueGetterSimpleParams } from "@mui/x-data-grid";
 import { createFromReactState, ValueLink } from "valynx";
 import "./index.css";
 
@@ -11,7 +11,7 @@ type Person = {
   id: number;
   name: string;
   email: string;
-  projects: number[];
+  projectIDs: number[];
 };
 
 type Project = {
@@ -88,9 +88,9 @@ function DataList<T>(props: { data: ValueLink<T[]>; selected: ValueLink<GridSele
 const App = () => {
   const reactState = React.useState<AppState>(() => ({
     people: [
-      { id: 1000, name: "Sam", email: "sam@example.com", projects: [2000, 2001] },
-      { id: 1001, name: "Ingo", email: "ingo@example.com", projects: [2001, 2002] },
-      { id: 1002, name: "Ben", email: "ben@example.com", projects: [2002] },
+      { id: 1000, name: "Sam", email: "sam@example.com", projectIDs: [2000, 2001] },
+      { id: 1001, name: "Ingo", email: "ingo@example.com", projectIDs: [2001, 2002] },
+      { id: 1002, name: "Ben", email: "ben@example.com", projectIDs: [2002] },
     ],
     projects: [
       { id: 2000, name: "Fun", description: "Things that are fun" },
@@ -103,13 +103,20 @@ const App = () => {
   // Valynx is easy to use with a useRate result
   const state = createFromReactState(reactState);
 
+  // Map people, adding a projects column that binds to the project data
+  const people = state
+    .prop("people")
+    .map((person) => person.addOptProp("projects", state.prop("projects").lookupMany(person.prop("projectIDs"), "id")));
+
+  type PersonView = typeof people.value[number];
+
   // Find the current person, returns a value link to a person or null, making it easy to conditionally show the form below
   // state.data.find(predicate) returns a value link to the record matching that predicate, or null. Updates to the result
   // will be saved back into the global state
   // Relies at the moment on no overlap between project & person IDs
-  const currentId = state.prop("current").item(0).value;
-  const currentPerson = currentId ? state.prop("people").find((row) => row.id === currentId) : null;
-  const currentProject = currentId ? state.prop("projects").find((row) => row.id === currentId) : null;
+  const currentId = state.prop("current").item(0) as ValueLink<number>;
+  const currentPerson = currentId.value ? state.prop("people").lookup(currentId, "id") : null;
+  const currentProject = currentId.value ? state.prop("projects").lookup(currentId, "id") : null;
 
   return (
     <Box
@@ -125,11 +132,17 @@ const App = () => {
       </Box>
       <Box sx={{ gridColumn: "1", gridRow: "2" }}>
         <DataList
-          data={state.prop("people")}
+          data={people}
           selected={state.prop("current")}
           columns={[
             { field: "name", width: 200 },
             { field: "email", width: 200 },
+            {
+              field: "projects",
+              valueGetter: (params: GridValueGetterSimpleParams<PersonView>) =>
+                params.row.projects?.map((x) => x.name).join(", "),
+              width: 200,
+            },
           ]}
         />
       </Box>
