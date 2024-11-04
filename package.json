@@ -1,9 +1,10 @@
 {
   "name": "valynx",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "State management based on 'value links', an object-friendly twist on functional lenses.",
-  "main": "index.js",
+  "main": "dist/index.js",
   "scripts": {
+    "build": "tsc",
     "lint": "prettier --check . && eslint --max-warnings 0 --ext js,ts,tsx src",
     "lint:fix": "prettier --write ."
   },

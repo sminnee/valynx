@@ -8,6 +8,7 @@
     "allowSyntheticDefaultImports": true,
     "strict": true,
     "forceConsistentCasingInFileNames": true,
+    "declaration": true,
     "module": "esnext",
     "moduleResolution": "node",
     "resolveJsonModule": true,
@@ -15,6 +16,7 @@
     "noEmit": false,
     "jsx": "react",
     "baseUrl": "./src",
+    "outDir": "./dist",
     "downlevelIteration": true,
     "sourceMap": true,
     "noUnusedLocals": true
