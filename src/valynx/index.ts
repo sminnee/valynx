@@ -45,9 +45,30 @@ type RecordValueLink<T extends AnyRecord> = BaseValueLink<T> & {
  * Value links for arrays have item() and find() methods
  */
 type ArrayValueLink<T> = BaseValueLink<T[]> & {
+  /**
+   * Get a value link to a specific value
+   */
   item: (idx: number) => ValueLink<T>;
+
+  /**
+   * Get an array of value links to each value
+   */
   items: () => ValueLink<T>[];
+
+  /**
+   * Vet a value link to the first item that matches the predicate or null.
+   */
   find: (predicate: (item: T) => boolean) => ValueLink<T> | null;
+
+  /**
+   * Apply the given lens to each item of the array
+   */
+  applyItems: <Child>(lens: Lens<T, Child>) => ValueLink<Child>[];
+
+  /**
+   * Call the mapping function on each item of the array
+   */
+  mapItems: <Child>(fn: (item: ValueLink<T>) => Child) => Child[];
 };
 
 /**
@@ -88,6 +109,30 @@ export const recordProp = <T, K extends keyof T>(key: K): Lens<T, T[K]> => [
   }),
 ];
 
+/**
+ * Lens that removes a property
+ */
+export const omitProp = <T, K extends keyof T>(key: K): Lens<T, Omit<T, K>> => [
+  ({ [key]: _, ...metric }) => metric,
+  ({ [key]: keyVal, ...metric }, updater) => ({ ...(updater(metric) as T), [key]: keyVal }),
+];
+
+/**
+ * Simple lens that provides an additional wrapper call to updates
+ */
+export const onChange = <T>(handler: UpdaterFn<T>): Lens<T, T> => [
+  (value) => value,
+  (value, updater) => handler(updater(value)),
+];
+
+/**
+ * Lens that allows partial data
+ */
+export const partial = <T>(): Lens<T, Partial<T>> => [
+  (value) => value,
+  (value, updater) => ({ ...value, ...updater(value) }),
+];
+
 //////////////////////////////////////////
 // Value link constructors
 
@@ -107,24 +152,29 @@ export function createValueLink<T>(value: T, updater: Updater<T>): ValueLink<T> 
 
   // Add array-specific methods to a BaseValueLink
   function addArrayMethods<U>(base: BaseValueLink<U[]>): ArrayValueLink<U> {
+    const item = (idx: number) => base.apply(arrayItem(idx));
+    const items = () => base.value.map((_, idx) => base.apply(arrayItem(idx)));
+
     return {
       ...base,
-
-      item: (idx) => base.apply(arrayItem(idx)),
-      items: () => base.value.map((_, idx) => base.apply(arrayItem(idx))),
+      item,
+      items,
       find: (predicate) => {
         const idx = base.value.findIndex(predicate);
         if (idx !== -1) {
-          return base.apply(arrayItem(idx));
+          return item(idx);
         } else {
           return null;
         }
       },
+      // @ts-expect-error lens polymorphism getting confused
+      applyItems: (lens) => items().map((item: ValueLink<U>) => item.apply(lens)),
+      mapItems: (fn) => items().map(fn),
     };
   }
 
   // Add record-specific methods to a BaseValueLink
-  function addRecordMethods<U>(base: BaseValueLink<U>): RecordValueLink<U> {
+  function addRecordMethods<U extends AnyRecord>(base: BaseValueLink<U>): RecordValueLink<U> {
     return {
       ...base,
 
@@ -143,7 +193,7 @@ export function createValueLink<T>(value: T, updater: Updater<T>): ValueLink<T> 
   if (Array.isArray(value)) {
     return addArrayMethods(base(value as any[], updater as unknown as Updater<any[]>)) as ValueLink<T>;
   } else if (value && typeof value === "object" && !("get" in value) && !("set" in value)) {
-    return addRecordMethods(base(value, updater)) as ValueLink<T>;
+    return addRecordMethods(base(value as AnyRecord, updater as Updater<AnyRecord>)) as ValueLink<T>;
   }
 
   // Default
