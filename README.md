@@ -53,28 +53,18 @@ updated without the text field needing to know what happens. Similarly, the
 
 ## Status
 
-Valynx is currently **experimental**: I am keen to try some of these concepts out at
-[my day job](https://www.tellfrankie.com), and also get feedback from other developers about **is
-this a problem worth solving?**, and **has someone else already done this?**.
+Valynx is experimental. I've used this on two production apps. I am very keen to get feedback from
+other developers:
 
-This repo isn't yet usable as a library - right now it's just an example app with the library
-contained in src/valynx. Once the concept has been fleshed out more fully I will make it usable as
-an NPM package.
-
-## Example
-
-See the content of [src/app/index.tsx](./src/app/index.tsx)
-
-To run this example, do the usual thing:
-
-```
-npm install
-npm start
-```
-
-Then open http://localhost:3000
+- is this a problem worth solving?
+- is this approach a good one?
+- has someone else already done this?
 
 ## Usage
+
+Install the usual way; the package comes with typescript bindings.
+
+`npm install valynx`
 
 ### Creating the application state
 
@@ -119,33 +109,68 @@ import { createFromReactState } from "valynx";
 const state = createFromReactState(reactState); // Returns type ValueLink<AppState>
 ```
 
-### What is a value link
+### Value link API
+
+A basic value link has the following properties are available:
 
 - `state.value` contains the current state value
 - `state.set(newState)` updates the state without reference to the old value
 - `state.update(oldState => newState)` updates the state using a function that is passed the old
   state value
+- `state.apply(lens)` create a new value link by applying the a lens (see below)
 
-### Deriving nested value links
+For value link of an array, the following additional methods are available:
 
-Valynx power is that you can create _nested_ value links, with both a value, and a setter that
-mutates the global state.
+- `state.item(idx)` returns a value link for the given array item
+- `state.items()` returns an array of value links, one for each item
+- `state.find(predicate)` returns a value link for the matching item, or null. updates are applied
+  back to that record.
+- `state.applyItems(lens)` returns an array of value links, with the given lense applied to each
+  item
+- `state.mapItems(mapperFn)` shortcut for state.items().map(mapperFn)
 
-For objects:
+And for a value link of a non-array object, the following methods are available:
 
-- `state.prop("data")` returns a value link of the data property of the app state
-- `state.props()` returns a new object with value links for each property - so `state.props().data`
-  is the same as `state.prop("data")`
+- `state.prop(name)`: return a value link for the given property
+- `state.props()` return a record mapping the object properties to a value link for each, so
+  `state.props().key` is the same as `state.prop("key")`
 
-For arrays:
+### Lenses
 
-- `state.item(idx)` returns a value link to the element of the array at the given index
-- `state.items()` returns an array of value links
-- `state.find(predicate)` finds the first value in the array matching the given predicate, and
-  ensures that updates are applied back to that record
+Interally, the state nesting is handled by applying lenses. Lenses are a simple tuple of [ getter,
+updater ].
 
-This can be used to expose related data for manipulation. This will set currentPerson to
-`ValueLink<Person> | null`.
+```ts
+type Lens<Base, Child> = [(base: Base) => Child, (base: Base, updater: UpdaterFn<Child>) => Base];
+```
+
+For example, this is the definition of recordProp, complete with its generic type signature:
+
+```ts
+const recordProp = <T, K extends keyof T>(key: K): Lens<T, T[K]> => [
+  (record) => record[key],
+  (record, updater) => ({
+    ...record,
+    [key]: updater(record[key]),
+  }),
+];
+```
+
+We have a number of built-in lenses:
+
+- `arrayItem(idx)`: Access an array element by index, which is used by state.items(), etc.
+- `recordProp(name)`: Access an object's property by name, which is used by state.props(), etc.
+- `omitProp(name)`: Omits a property from the record, which can be useful to get a simpler type
+- `onChange(handler)`: Applies the handler to the result before saving, which can be useful for
+  example for setting default fields
+- `partial()`: Turns T into Partial<T> by keeping any omitted fields the same
+
+In addition to these, you can write your own lenses, or functions that produce lenses.
+
+## Examples
+
+Putthing these all together, you can drill down to the state you need. For example, this will set
+currentPerson to `ValueLink<Person> | null`.
 
 ```ts
 const currentPersonId = state.props("current").value;
@@ -153,7 +178,7 @@ const currentPerson =
   currentPersonId && state.props("data").find((row) => row.id === currentPersonId);
 ```
 
-Putting that all together into a react App componet, <PersonDetail> is now passed a Person value
+Putting that all together into a react App component, <PersonDetail> is now passed a Person value
 link, and needn't know where that object is persisted.
 
 ```ts
@@ -217,35 +242,8 @@ const PersonDetail = (props: { state: ValueLink<Person> }) => {
 };
 ```
 
-## Under the hood
-
-Interally, the state nesting is handled by applying lenses.We have two functions that produce
-lenses:
-
-- `arrayItem(idx)`: Access an array element by index
-- `recordProp(name)`: Access an object's property by name
-
-`valueLink.apply(lens)` returns a new value link with the lens applied. So,
-`valueLink.apply(recordProp("firstName"))` does the same thing as `valueLink.prop("firstName")`.
-
-Lenses are a simple tuple of [ getter, updater ]. For example, this is the definition of recordProp,
-complete with its generic type signature:
-
-```ts
-const recordProp = <T, K extends keyof T>(key: K): Lens<T, T[K]> => [
-  (record) => record[key],
-  (record, updater) => ({
-    ...record,
-    [key]: updater(record[key]),
-  }),
-];
-```
-
-If necessary, you could write and `apply()` your own lenses for more estoeric navigation through a
-state.
-
-If you want to know more, go read [src/valynx/index.ts](./src/valynx/index.ts) - it's only 150 lines
-(for now).
+If you want to know more, go read [src/valynx/index.ts](./src/valynx/index.ts) - it's only a couple
+of hundred lines (for now).
 
 ## Prior art / references
 
@@ -257,3 +255,4 @@ If you want to know more, go read [src/valynx/index.ts](./src/valynx/index.ts) -
 - Adding / deleting records
 - Interaction with server-side state
 - Non-CRUD actions
+- Memoization in React

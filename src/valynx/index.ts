@@ -17,6 +17,13 @@ export type UpdaterFn<T> = (oldVal: T) => T;
  */
 export type Updater<T> = (updater: UpdaterFn<T>) => void;
 
+/**
+ * Define a lens that can be applied to a value link to produce another value link
+ * The first element of the tuple gets the child value, given the base
+ * The second element of the tuple, given a base value and the updater to apply to the child, reutrns a modified base
+ */
+export type Lens<Base, Child> = [(base: Base) => Child, (base: Base, updater: UpdaterFn<Child>) => Base];
+
 type ReactState<T> = [T, Updater<T>];
 
 /**
@@ -79,13 +86,6 @@ export type ValueLink<T> = [T] extends [Array<any>] // [p] needed around element
   : [T] extends [AnyRecord]
   ? RecordValueLink<T>
   : BaseValueLink<T>;
-
-/**
- * Define a lens that can be applied to a value link to produce another value link
- * The first element of the tuple gets the child value, given the base
- * The second element of the tuple, given a base value and the updater to apply to the child, reutrns a modified base
- */
-export type Lens<Base, Child> = [(base: Base) => Child, (base: Base, updater: UpdaterFn<Child>) => Base];
 
 //////////////////////////////////////////
 // Lenses
