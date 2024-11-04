@@ -1,9 +1,9 @@
 # Valynx
 
-Valynx is a state-management library based on 'value links', and object-friendly twist on the
+Valynx is a state-management library based on 'value links', an object-friendly twist on the
 functional notion of lenses.
 
-Valynx lets you create a single global state tree, but pass fragments of that state to components
+Valynx lets you create a single shared state tree, but pass fragments of that state to components
 such as form fields as if it were a local state. It's aim is to combine the **integrity of global
 state** with the **simplicity of component state**.
 
@@ -40,6 +40,12 @@ Valynx provides something similar called a **Value Link**. It is a simple object
 property, a `set(val)` method, and an `update(old => new)` method. IMO it's more ergonomic for the
 typical TypeScript/React app than a purely functional approach.
 
+Valynx can be used for a single global state, or for a shared state for a single piece of your app,
+such as the state for:
+
+- An editable dashboard of nested widgets (this was my first use-case)
+- A form
+
 In Valynx, given a value link to your global state, `state`, you would retrieve this nested state as
 follows:
 
@@ -56,20 +62,24 @@ updated without the text field needing to know what happens. Similarly, the
 Valynx is experimental. I've used this on two production apps. I am very keen to get feedback from
 other developers:
 
-- is this a problem worth solving?
-- is this approach a good one?
-- has someone else already done this?
+- Is this a problem worth solving?
+- Is this approach a good one?
+- Has someone else already done this?
+
+**Note:** I wouldn't recommend using the current release of Valynx for a large global state - it
+lacks the memoization needed to prevent this from performing poorly, as every component would
+re-render on any state change.
 
 ## Usage
 
-Install the usual way; the package comes with typescript bindings.
+Install the `valynx` package in your preferred way; it comes with TypeScript bindings.
 
 `npm install valynx`
 
-### Creating the application state
+### Creating a shared state
 
-Valynx assumes that your application state is a single nested state object, defined with a
-TypeScript type. In this example we will create a simple email address book app. Our AppState has:
+Valynx operates well with a single nested state object, defined with a TypeScript type. In this
+example we will create a simple email address book app. Our AppState has:
 
 - an array of people, with name, email, and id.
 - a marker for the currently-selected person that can be optionally set to a person id.
@@ -104,8 +114,9 @@ const reactState = React.useState<AppState>(() => ({
 function, exact as useState returns:
 
 ```ts
-// Valynx is easy to use with a useRate result
+// Valynx is easy to use with a useState result
 import { createFromReactState } from "valynx";
+
 const state = createFromReactState(reactState); // Returns type ValueLink<AppState>
 ```
 
@@ -247,8 +258,14 @@ of hundred lines (for now).
 
 ## Prior art / references
 
-- [Value Link: Painless React forms, validation, and state management](https://www.npmjs.com/package/valuelink)
-- [Functional lenses: Composable Getters and Setters for Functional Programming](https://medium.com/javascript-scene/lenses-b85976cb0534)
+- [Value Link: Painless React forms, validation, and state management](https://www.npmjs.com/package/valuelink).
+  This is a similar API but AFAIK it doesn't use lenses internally, which makes it harder to build
+  custom operators.
+
+- [Functional lenses: Composable Getters and Setters for Functional Programming](https://medium.com/javascript-scene/lenses-b85976cb0534).
+  This is the theoretical foundation but I don't find the API exposed to be very ergonomic.
+
+Valynx combines benefits of these two approaches.
 
 ## Still to come
 
