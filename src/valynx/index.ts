@@ -27,65 +27,76 @@ export type Lens<Base, Child> = [(base: Base) => Child, (base: Base, updater: Up
 type ReactState<T> = [T, Updater<T>];
 
 /**
- * Basic value link on a simple type - not a record or an array
+ * Simpler type signature better for type-hinting - type inference works better
  */
-export type BaseValueLink<T> = {
+export type SettableValue<T> = {
+  name?: string;
   value: T;
   set: Setter<T>;
+};
+
+/**
+ * Basic value link on a simple type - not a record or an array
+ */
+export type ValueLink<T> = SettableValue<T> & {
   update: Updater<T>;
-  apply: <Child>(lens: Lens<T, Child>) => ValueLink<Child>;
-};
+  apply: <Child>(lens: Lens<T, Child>, name?: string) => ValueLink<Child>;
 
-type AnyRecord = Record<any, any>;
+  // Record methods
 
-/**
- * Value links for records have properties that return value links of the source property
- */
-type RecordValueLink<T extends AnyRecord> = BaseValueLink<T> & {
-  prop: <P extends keyof T>(name: P) => ValueLink<T[P]>;
-  props: () => {
-    [P in keyof T]: ValueLink<T[P]>;
-  };
-};
+  /**
+   * Get a value link to a specific property
+   */
+  prop: <P extends AnyKeyOf<T>>(name: P) => ValueLink<AnyValueOf<T, P>>;
 
-/**
- * Value links for arrays have item() and find() methods
- */
-type ArrayValueLink<T> = BaseValueLink<T[]> & {
+  /**
+   * Get a record of value links to each property
+   */
+  props: () => PropLinks<T>;
+
+  // Array methods
+
   /**
    * Get a value link to a specific value
    */
-  item: (idx: number) => ValueLink<T>;
+  item: (idx: number) => ValueLink<ArrayValue<T>>;
 
   /**
    * Get an array of value links to each value
    */
-  items: () => ValueLink<T>[];
+  items: () => ItemLinks<ArrayValue<T>>;
 
   /**
    * Vet a value link to the first item that matches the predicate or null.
    */
-  find: (predicate: (item: T) => boolean) => ValueLink<T> | null;
+  find: (predicate: (item: ArrayValue<T>) => boolean) => ValueLink<ArrayValue<T>> | null;
 
   /**
    * Apply the given lens to each item of the array
    */
-  applyItems: <Child>(lens: Lens<T, Child>) => ValueLink<Child>[];
+  applyItems: <Child>(lens: Lens<ArrayValue<T>, Child>) => ValueLink<Child>[];
 
   /**
    * Call the mapping function on each item of the array
    */
-  mapItems: <Child>(fn: (item: ValueLink<T>) => Child) => Child[];
+  mapItems: <Child>(fn: (item: ValueLink<ArrayValue<T>>) => Child) => Child[];
+};
+
+export type AnyRecord = Record<string, any>;
+
+export type LinkValue<T> = T extends ValueLink<infer U> ? U : never;
+
+/**
+ * Record of value links, as returned by props()
+ */
+export type PropLinks<T> = {
+  [P in NonOptionalKeys<T>]: ValueLink<T[P]>;
 };
 
 /**
- * The ValueLink type, that may be an ArrayValueLink for arrays or a RecordValueLink for records
+ * Array of value links, as returned by items()
  */
-export type ValueLink<T> = [T] extends [Array<any>] // [p] needed around elements for union types to work
-  ? ArrayValueLink<T[number]>
-  : [T] extends [AnyRecord]
-  ? RecordValueLink<T>
-  : BaseValueLink<T>;
+export type ItemLinks<T> = ValueLink<T>[];
 
 //////////////////////////////////////////
 // Lenses
@@ -101,11 +112,11 @@ export const arrayItem = <T>(idx: number): Lens<T[], T> => [
 /**
  * Lens for modifying a property of a record
  */
-export const recordProp = <T, K extends keyof T>(key: K): Lens<T, T[K]> => [
-  (record) => record[key],
+export const recordProp = <T, K extends AnyKeyOf<T>>(key: K): Lens<T, AnyValueOf<T, K>> => [
+  (record) => record[key] as AnyValueOf<T, K>,
   (record, updater) => ({
     ...record,
-    [key]: updater(record[key]),
+    [key]: updater(record[key] as AnyValueOf<T, K>),
   }),
 ];
 
@@ -136,68 +147,60 @@ export const partial = <T>(): Lens<T, Partial<T>> => [
 //////////////////////////////////////////
 // Value link constructors
 
+const emptyValueLink = createValueLink<any>(undefined, () => {});
+
 /**
  * Create a ValueLink for the given value/updater pair
  * Ensures that arrays or records have extra methods
  */
-export function createValueLink<T>(value: T, updater: Updater<T>): ValueLink<T> {
-  // Build a BaseValueLink
-  const base = <U>(value: U, updater: Updater<U>): BaseValueLink<U> => ({
-    value: value,
-    set: (value) => updater((_) => value),
-    update: updater,
-    apply: ([getChild, updateChild]) =>
-      createValueLink(getChild(value), (fn) => updater((base) => updateChild(base, fn))),
-  });
+export function createValueLink<T>(value: T, update: Updater<T>, name?: string): ValueLink<T> {
+  const set = (value: T) => update((_) => value);
 
-  // Add array-specific methods to a BaseValueLink
-  function addArrayMethods<U>(base: BaseValueLink<U[]>): ArrayValueLink<U> {
-    const item = (idx: number) => base.apply(arrayItem(idx));
-    const items = () => base.value.map((_, idx) => base.apply(arrayItem(idx)));
+  const apply = <U>([getChild, updateChild]: Lens<T, U>, name?: string) =>
+    createValueLink(getChild(value), (fn) => update((base) => updateChild(base, fn)), name);
 
-    return {
-      ...base,
-      item,
-      items,
-      find: (predicate) => {
-        const idx = base.value.findIndex(predicate);
-        if (idx !== -1) {
-          return item(idx);
-        } else {
-          return null;
-        }
-      },
-      // @ts-expect-error lens polymorphism getting confused
-      applyItems: (lens) => items().map((item: ValueLink<U>) => item.apply(lens)),
-      mapItems: (fn) => items().map(fn),
-    };
-  }
+  // Array helpers
 
-  // Add record-specific methods to a BaseValueLink
-  function addRecordMethods<U extends AnyRecord>(base: BaseValueLink<U>): RecordValueLink<U> {
-    return {
-      ...base,
+  const item = (idx: number): ValueLink<ArrayValue<T>> =>
+    // @ts-expect-error TS can't apply isArray back to a T guard
+    Array.isArray(value) ? apply(arrayItem(idx)) : emptyValueLink;
 
-      prop: (name) => base.apply(recordProp(name)),
-      props: () => {
-        let built: any = {};
-        Object.keys(base.value).forEach((name) => {
-          built[name] = base.apply(recordProp(name as keyof U));
-        });
-        return built;
-      },
-    };
-  }
+  const items = (): Array<ValueLink<ArrayValue<T>>> =>
+    // @ts-expect-error TS can't apply isArray back to a T guard
+    Array.isArray(value) ? value.map((_, idx) => apply(arrayItem(idx))) : [];
 
-  // Polymorphic creation of value-links for array or records
-  if (Array.isArray(value)) {
-    return addArrayMethods(base(value as any[], updater as unknown as Updater<any[]>)) as ValueLink<T>;
-  } else if (value && typeof value === "object" && !("get" in value) && !("set" in value)) {
-    return addRecordMethods(base(value as AnyRecord, updater as Updater<AnyRecord>)) as ValueLink<T>;
-  }
+  const applyItems = <U>(lens: Lens<ArrayValue<T>, U>): Array<ValueLink<U>> => items().map((item) => item.apply(lens));
 
-  // Default
-  return base(value, updater) as ValueLink<T>;
+  const mapItems = <U>(fn: (value: ValueLink<ArrayValue<T>>) => U) => items().map(fn);
+
+  const find = (predicate: (item: T) => boolean) => {
+    if (!Array.isArray(value)) {
+      return null;
+    }
+
+    const idx = value.findIndex(predicate);
+    if (idx !== -1) {
+      return item(idx);
+    } else {
+      return null;
+    }
+  };
+
+  // Record helpers
+
+  const prop = (name: AnyKeyOf<T>) => apply(recordProp(name), typeof name === "string" ? name : undefined);
+
+  const props = () => {
+    if (typeof value !== "object" || value === null) return {};
+
+    let built: any = {};
+    Object.keys(value).forEach((name) => {
+      built[name] = apply(recordProp(name as AnyKeyOf<T>), name);
+    });
+    return built;
+  };
+
+  return { value, update, name, set, apply, item, items, applyItems, mapItems, find, prop, props } as ValueLink<T>;
 }
 
 /**
@@ -208,3 +211,38 @@ export function createFromReactState<T>(statePair: ReactState<T>) {
   const [value, updater] = statePair;
   return createValueLink(value, updater);
 }
+
+/**
+ * Returns value & onChange
+ */
+export const inputProps = (valueLink: SettableValue<string> | SettableValue<string | undefined>) => {
+  return {
+    value: valueLink.value ?? "",
+    onChange: (e: any) => {
+      valueLink.set(e.target.value);
+    },
+  };
+};
+
+/**
+ * Returns defaultValue & onBlur props for an input element
+ */
+export const blurInputProps = (valueLink: SettableValue<string> | SettableValue<string | undefined>) => ({
+  defaultValue: valueLink.value ?? "",
+  onBlur: (e: any) => valueLink.set(e.target.value),
+});
+
+// Utility types
+
+/**
+ * Remove optional keys from a type
+ */
+type NonOptionalKeys<T> = { [K in keyof T]-?: T extends { [K1 in K]: any } ? K : never }[keyof T];
+/**
+ * keyof T and T[K] that return all possible values in a union type
+ */
+export type AnyKeyOf<T> = T extends T ? keyof T : never;
+
+export type AnyValueOf<T, K extends AnyKeyOf<T>> = T extends T ? (K extends keyof T ? T[K] : undefined) : never;
+
+export type ArrayValue<T> = T extends Array<infer U> ? U : unknown;
