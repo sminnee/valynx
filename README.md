@@ -114,10 +114,14 @@ const reactState = React.useState<AppState>(() => ({
 function, exact as useState returns:
 
 ```ts
-// Valynx is easy to use with a useState result
-import { createFromReactState } from "valynx";
 
-const state = createFromReactState(reactState); // Returns type ValueLink<AppState>
+// Valynx is easy to use with a useState result
+import { valueLinkCreator } from "valynx";
+
+// Sets up a memoization cache for value-link results
+const useValueLink = valueLinkCreator();
+
+const state = useValueLink(..reactState); // Returns type ValueLink<AppState>
 ```
 
 ### Value link API
@@ -148,23 +152,28 @@ And for a value link of a non-array object, the following methods are available:
 
 ### Lenses
 
-Interally, the state nesting is handled by applying lenses. Lenses are a simple tuple of [ getter,
-updater ].
+Interally, the state nesting is handled by applying lenses. Lenses are a simple tuple of [
+getter, updater ].
 
 ```ts
 type Lens<Base, Child> = [(base: Base) => Child, (base: Base, updater: UpdaterFn<Child>) => Base];
 ```
 
-For example, this is the definition of recordProp, complete with its generic type signature:
+For example, this is the definition of recordProp, complete with its generic type signature. Note
+that we memoize lens creators to ensure that the results of applying them are also memoized.
 
 ```ts
-const recordProp = <T, K extends keyof T>(key: K): Lens<T, T[K]> => [
-  (record) => record[key],
-  (record, updater) => ({
-    ...record,
-    [key]: updater(record[key]),
-  }),
-];
+import { memoize } from "valynx";
+
+const recordProp = memoize(
+  <T, K extends keyof T>(key: K): Lens<T, T[K]> => [
+    (record) => record[key],
+    (record, updater) => ({
+      ...record,
+      [key]: updater(record[key]),
+    }),
+  ]
+);
 ```
 
 We have a number of built-in lenses:
@@ -195,7 +204,7 @@ link, and needn't know where that object is persisted.
 ```ts
 const App = () => {
   const reactState = React.useState<AppState>(/* () => defaultState */);
-  const state = createFromReactState(reactState);
+  const state = useValueLink(...reactState);
 
   const currentPersonId = state.props("current").value;
   const currentPerson =
@@ -211,6 +220,9 @@ const App = () => {
     </div>
   );
 };
+
+const useValueLink = valueLinkCreator();
+
 ```
 
 ### Linking to form fields
@@ -272,4 +284,3 @@ Valynx combines benefits of these two approaches.
 - Adding / deleting records
 - Interaction with server-side state
 - Non-CRUD actions
-- Memoization in React

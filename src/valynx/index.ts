@@ -104,60 +104,76 @@ export type ItemLinks<T> = ValueLink<T>[];
 /**
  * Lens for modifying an element of an array
  */
-export const arrayItem = <T>(idx: number): Lens<T[], T> => [
-  (arr) => arr[idx],
-  (arr, updater) => [...arr.slice(0, idx), updater(arr[idx]), ...arr.slice(idx + 1)],
-];
+export const arrayItem = memoize(
+  <T>(idx: number): Lens<T[], T> => [
+    (arr) => arr[idx],
+    (arr, updater) => [...arr.slice(0, idx), updater(arr[idx]), ...arr.slice(idx + 1)],
+  ]
+);
 
 /**
  * Lens for modifying a property of a record
  */
-export const recordProp = <T, K extends AnyKeyOf<T>>(key: K): Lens<T, AnyValueOf<T, K>> => [
-  (record) => record[key] as AnyValueOf<T, K>,
-  (record, updater) => ({
-    ...record,
-    [key]: updater(record[key] as AnyValueOf<T, K>),
-  }),
-];
+export const recordProp = memoize(
+  <T, K extends AnyKeyOf<T>>(key: K): Lens<T, AnyValueOf<T, K>> => [
+    (record) => record[key] as AnyValueOf<T, K>,
+    (record, updater) => ({
+      ...record,
+      [key]: updater(record[key] as AnyValueOf<T, K>),
+    }),
+  ]
+);
 
 /**
  * Lens that removes a property
  */
-export const omitProp = <T, K extends keyof T>(key: K): Lens<T, Omit<T, K>> => [
-  ({ [key]: _, ...metric }) => metric,
-  ({ [key]: keyVal, ...metric }, updater) => ({ ...(updater(metric) as T), [key]: keyVal }),
-];
+export const omitProp = memoize(
+  <T, K extends keyof T>(key: K): Lens<T, Omit<T, K>> => [
+    ({ [key]: _, ...metric }) => metric,
+    ({ [key]: keyVal, ...metric }, updater) => ({ ...(updater(metric) as T), [key]: keyVal }),
+  ]
+);
 
 /**
  * Simple lens that provides an additional wrapper call to updates
  */
-export const onChange = <T>(handler: UpdaterFn<T>): Lens<T, T> => [
-  (value) => value,
-  (value, updater) => handler(updater(value)),
-];
+export const onChange = memoize(
+  <T>(handler: UpdaterFn<T>): Lens<T, T> => [(value) => value, (value, updater) => handler(updater(value))]
+);
 
 /**
  * Lens that allows partial data
  */
-export const partial = <T>(): Lens<T, Partial<T>> => [
-  (value) => value,
-  (value, updater) => ({ ...value, ...updater(value) }),
-];
+export const partial = memoize(
+  <T>(): Lens<T, Partial<T>> => [(value) => value, (value, updater) => ({ ...value, ...updater(value) })]
+);
 
 //////////////////////////////////////////
 // Value link constructors
 
 const emptyValueLink = createValueLink<any>(undefined, () => {});
 
+type ValueLinkCreator = <T>(value: T, update: Updater<T>, name?: string) => ValueLink<T>;
+
 /**
  * Create a ValueLink for the given value/updater pair
  * Ensures that arrays or records have extra methods
  */
-export function createValueLink<T>(value: T, update: Updater<T>, name?: string): ValueLink<T> {
+export function createValueLink<T>(
+  value: T,
+  update: Updater<T>,
+  name?: string,
+  cache?: TwoKeyCache<Updater<any>, Lens<any, any>, any>
+): ValueLink<T> {
   const set = (value: T) => update((_) => value);
 
-  const apply = <U>([getChild, updateChild]: Lens<T, U>, name?: string) =>
-    createValueLink(getChild(value), (fn) => update((base) => updateChild(base, fn)), name);
+  const apply = cache
+    ? <U>(lens: Lens<T, U>, name?: string) =>
+        cache(update, lens, () =>
+          createValueLink(lens[0](value), (fn) => update((base) => lens[1](base, fn)), name, cache)
+        )
+    : <U>(lens: Lens<T, U>, name?: string) =>
+        createValueLink(lens[0](value), (fn) => update((base) => lens[1](base, fn)), name);
 
   // Array helpers
 
@@ -165,9 +181,11 @@ export function createValueLink<T>(value: T, update: Updater<T>, name?: string):
     // @ts-expect-error TS can't apply isArray back to a T guard
     Array.isArray(value) ? apply(arrayItem(idx)) : emptyValueLink;
 
-  const items = (): Array<ValueLink<ArrayValue<T>>> =>
-    // @ts-expect-error TS can't apply isArray back to a T guard
-    Array.isArray(value) ? value.map((_, idx) => apply(arrayItem(idx))) : [];
+  const items = memoize(
+    (): Array<ValueLink<ArrayValue<T>>> =>
+      // @ts-expect-error TS can't apply isArray back to a T guard
+      Array.isArray(value) ? value.map((_, idx) => apply(arrayItem(idx))) : []
+  );
 
   const applyItems = <U>(lens: Lens<ArrayValue<T>, U>): Array<ValueLink<U>> => items().map((item) => item.apply(lens));
 
@@ -190,7 +208,7 @@ export function createValueLink<T>(value: T, update: Updater<T>, name?: string):
 
   const prop = (name: AnyKeyOf<T>) => apply(recordProp(name), typeof name === "string" ? name : undefined);
 
-  const props = () => {
+  const props = memoize(() => {
     if (typeof value !== "object" || value === null) return {};
 
     let built: any = {};
@@ -198,7 +216,7 @@ export function createValueLink<T>(value: T, update: Updater<T>, name?: string):
       built[name] = apply(recordProp(name as AnyKeyOf<T>), name);
     });
     return built;
-  };
+  });
 
   return { value, update, name, set, apply, item, items, applyItems, mapItems, find, prop, props } as ValueLink<T>;
 }
@@ -246,3 +264,80 @@ export type AnyKeyOf<T> = T extends T ? keyof T : never;
 export type AnyValueOf<T, K extends AnyKeyOf<T>> = T extends T ? (K extends keyof T ? T[K] : undefined) : never;
 
 export type ArrayValue<T> = T extends Array<infer U> ? U : unknown;
+
+// Memoized creation
+
+export function valueLinkCreator(): ValueLinkCreator {
+  const cache = twoKeyWeakCache();
+  const applyCache = twoKeyWeakCache();
+
+  return <T>(value: T, updater: Updater<T>, name?: string) =>
+    cache(value, updater, () => createValueLink(value, updater, name, applyCache)) as ValueLink<T>;
+}
+
+/**
+ * WeakMap cache
+ */
+function weakCache<K extends object, V extends object>(): OneKeyCache<K, V> {
+  const cache = new WeakMap();
+
+  return (key: K, ifMissing: () => V) => {
+    const objKey = weakKey(key);
+    return cache.get(objKey) ?? addMap(cache, objKey, ifMissing());
+  };
+}
+
+/**
+ * Map (strong) cache
+ */
+function strongCache<K, V>(): OneKeyCache<K, V> {
+  const cache = new Map();
+
+  return (key: K, ifMissing: () => V) => {
+    return cache.get(key) ?? addMap(cache, key, ifMissing());
+  };
+}
+function addMap<K, V>(map: EitherMap<K, V>, key: K, value: V): V {
+  map.set(key, value);
+  return value;
+}
+
+/**
+ * WeakMap cache with 2 keys
+ */
+function twoKeyWeakCache<K1, K2, V>(): TwoKeyCache<K1, K2, V> {
+  const cache = new WeakMap();
+
+  return (key1: K1, key2: K2, ifMissing: () => V) => {
+    const objKey1 = weakKey(key1);
+    const objKey2 = weakKey(key2);
+
+    const innerCache = cache.get(objKey1) ?? addMap(cache, objKey1, new Map());
+
+    if (innerCache.has(objKey2)) {
+      return innerCache.get(objKey2);
+    }
+
+    return addMap(innerCache, objKey2, ifMissing());
+  };
+}
+
+type OneKeyCache<K, V> = (key: K, ifMissing: () => V) => V;
+type TwoKeyCache<K1, K2, V> = (key1: K1, key2: K2, ifMissing: () => V) => V;
+type EitherMap<K, V> = K extends WeakKey ? Map<K, V> | WeakMap<K, V> : Map<K, V>;
+
+/**
+ * Simple function memoizer using the first argument
+ */
+function memoize<T extends (...args: any[]) => any>(fn: T, strong = false): T {
+  const cache = strong ? strongCache() : weakCache();
+  return ((...args: any[]) => cache(args[0], () => fn(...args))) as T;
+}
+
+/**
+ * Creates a memoized object out of a scalar to use in a WeakMap
+ */
+const scalarToObj = memoize((value: any) => ({ value }), true);
+const isScalar = (value: any) => value === null || (typeof value !== "object" && typeof value !== "function");
+
+const weakKey = (key: any): WeakKey => (isScalar(key) ? scalarToObj(key) : key);
