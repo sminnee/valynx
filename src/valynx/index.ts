@@ -134,12 +134,28 @@ export const omitProp = memoize(
   ]
 );
 
+type ChangeHandler<T> = (newValue: T, oldValue: T) => T;
+
 /**
  * Simple lens that provides an additional wrapper call to updates
  */
 export const onChange = memoize(
-  <T>(handler: UpdaterFn<T>): Lens<T, T> => [(value) => value, (value, updater) => handler(updater(value))]
+  <T>(handler: ChangeHandler<T>): Lens<T, T> => [
+    (value) => value,
+    (value, updater) => {
+      const newValue = updater(value);
+      return handler(newValue, value);
+    },
+  ]
 );
+
+/**
+ * Helper for onChange that will run the callback on array items that have changed
+ */
+export const mapChangedItems =
+  <T>(handler: ChangeHandler<T>): ChangeHandler<T[]> =>
+  (newValue, oldValue) =>
+    newValue.map((newItem, idx) => (newValue === oldValue[idx] ? newItem : handler(newItem, oldValue[idx])));
 
 /**
  * Lens that allows partial data
