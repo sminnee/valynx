@@ -167,8 +167,6 @@ export const partial = memoize(
 //////////////////////////////////////////
 // Value link constructors
 
-const emptyValueLink = createValueLink<any>(undefined, () => {});
-
 type ValueLinkCreator = <T>(value: T, update: Updater<T>, name?: string) => ValueLink<T>;
 
 /**
@@ -179,13 +177,13 @@ export function createValueLink<T>(
   value: T,
   update: Updater<T>,
   name?: string,
-  cache?: TwoKeyCache<Updater<any>, Lens<any, any>, any>
+  cache?: ThreeKeyCache<any, Updater<any>, Lens<any, any>, any>
 ): ValueLink<T> {
   const set = (value: T) => update((_) => value);
 
   const apply = cache
     ? <U>(lens: Lens<T, U>, name?: string) =>
-        cache(update, lens, () =>
+        cache(value, update, lens, () =>
           createValueLink(lens[0](value), (fn) => update((base) => lens[1](base, fn)), name, cache)
         )
     : <U>(lens: Lens<T, U>, name?: string) =>
@@ -224,15 +222,16 @@ export function createValueLink<T>(
 
   const prop = (name: AnyKeyOf<T>) => apply(recordProp(name), typeof name === "string" ? name : undefined);
 
-  const props = memoize(() => {
+  // memoize but reset for value
+  const props = () => {
     if (typeof value !== "object" || value === null) return {};
 
     let built: any = {};
     Object.keys(value).forEach((name) => {
-      built[name] = apply(recordProp(name as AnyKeyOf<T>), name);
+      built[name] = apply(recordProp(name as AnyKeyOf<T>), typeof name === "string" ? name : undefined);
     });
     return built;
-  });
+  };
 
   return { value, update, name, set, apply, item, items, applyItems, mapItems, find, prop, props } as ValueLink<T>;
 }
@@ -285,7 +284,7 @@ export type ArrayValue<T> = T extends Array<infer U> ? U : unknown;
 
 export function valueLinkCreator(): ValueLinkCreator {
   const cache = twoKeyWeakCache();
-  const applyCache = twoKeyWeakCache();
+  const applyCache = threeKeyWeakCache();
 
   return <T>(value: T, updater: Updater<T>, name?: string) =>
     cache(value, updater, () => createValueLink(value, updater, name, applyCache)) as ValueLink<T>;
@@ -322,24 +321,43 @@ function addMap<K, V>(map: EitherMap<K, V>, key: K, value: V): V {
  * WeakMap cache with 2 keys
  */
 function twoKeyWeakCache<K1, K2, V>(): TwoKeyCache<K1, K2, V> {
-  const cache = new WeakMap();
+  const cache = new WeakMap<WeakKey, WeakMap<WeakKey, V>>();
 
   return (key1: K1, key2: K2, ifMissing: () => V) => {
     const objKey1 = weakKey(key1);
     const objKey2 = weakKey(key2);
 
-    const innerCache = cache.get(objKey1) ?? addMap(cache, objKey1, new Map());
+    let innerCache = cache.get(objKey1);
 
-    if (innerCache.has(objKey2)) {
-      return innerCache.get(objKey2);
+    if (innerCache) {
+      if (innerCache.has(objKey2)) {
+        return innerCache.get(objKey2)!;
+      }
+    } else {
+      innerCache = addMap(cache, objKey1, new WeakMap());
     }
 
     return addMap(innerCache, objKey2, ifMissing());
   };
 }
 
+/**
+ * WeakMap cache with 3 keys
+ */
+function threeKeyWeakCache<K1, K2, K3, V>(): ThreeKeyCache<K1, K2, K3, V> {
+  const cache = new WeakMap<WeakKey, TwoKeyCache<K2, K3, V>>();
+
+  return (key1: K1, key2: K2, key3: K3, ifMissing: () => V) => {
+    const objKey1 = weakKey(key1);
+
+    let innerCache = cache.get(objKey1) ?? addMap(cache, objKey1, twoKeyWeakCache());
+    return innerCache(key2, key3, ifMissing);
+  };
+}
+
 type OneKeyCache<K, V> = (key: K, ifMissing: () => V) => V;
 type TwoKeyCache<K1, K2, V> = (key1: K1, key2: K2, ifMissing: () => V) => V;
+type ThreeKeyCache<K1, K2, K3, V> = (key1: K1, key2: K2, key3: K3, ifMissing: () => V) => V;
 type EitherMap<K, V> = K extends WeakKey ? Map<K, V> | WeakMap<K, V> : Map<K, V>;
 
 /**
@@ -356,4 +374,6 @@ function memoize<T extends (...args: any[]) => any>(fn: T, strong = false): T {
 const scalarToObj = memoize((value: any) => ({ value }), true);
 const isScalar = (value: any) => value === null || (typeof value !== "object" && typeof value !== "function");
 
-const weakKey = (key: any): WeakKey => (isScalar(key) ? scalarToObj(key) : key);
+const weakKey = <K>(key: K): WeakKey => (isScalar(key) ? scalarToObj(key) : key) as WeakKey;
+
+const emptyValueLink = createValueLink<any>(undefined, () => {});

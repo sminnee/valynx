@@ -86,14 +86,16 @@ describe("memoization", () => {
     assert.equal(link1.prop("firstName"), link1.prop("firstName"));
     assert.equal(link1.prop("firstName"), link2.prop("firstName"));
 
-    assert.equal(link1.props(), link1.props());
-    assert.equal(link1.props(), link2.props());
+    assert.equal(link1.props().firstName, link1.props().firstName);
+    assert.equal(link1.props().firstName, link2.props().firstName);
+
+    assert.equal(link1.props().firstName, link1.prop("firstName"));
   });
 
   it("access item() & items() should memoize", () => {
     const createLink = valueLinkCreator();
 
-    const stateSource = createStateSource({ firstName: "Sam", lastName: "Minnee" });
+    const stateSource = createStateSource([{ id: "a" }, { id: "b" }, { id: "c" }]);
 
     const state = stateSource();
     const state2 = stateSource();
@@ -101,11 +103,13 @@ describe("memoization", () => {
     const link1 = createLink(...state);
     const link2 = createLink(...state2);
 
-    assert.equal(link1.prop("firstName"), link1.prop("firstName"));
-    assert.equal(link1.prop("firstName"), link2.prop("firstName"));
+    assert.equal(link1.item(0), link1.item(0));
+    assert.equal(link1.item(0), link2.item(0));
 
-    assert.equal(link1.props(), link1.props());
-    assert.equal(link1.props(), link2.props());
+    assert.equal(link1.items()[0], link1.items()[0]);
+    assert.equal(link1.items()[0], link2.items()[0]);
+
+    assert.equal(link1.items()[0], link2.item(0));
   });
 
   it("apply() should memoize", () => {
@@ -130,5 +134,25 @@ describe("memoization", () => {
 
     assert.equal(applied1, applied2);
     assert.equal(applied1, applied3);
+  });
+
+  it("props() memoization should reset when value changes", () => {
+    const createLink = valueLinkCreator();
+    const stateSource = createStateSource({ firstName: "sam", lastName: "minnee" });
+
+    const state = stateSource();
+
+    const link = createLink(...state);
+
+    const linkProps = link.props();
+
+    link.props().firstName.set("Samuel");
+
+    const link3 = createLink(...stateSource());
+
+    assert.equal(link3.props().firstName.value, "Samuel");
+    assert.equal(link3.prop("firstName").value, "Samuel");
+
+    assert.notEqual(linkProps.firstName, link3.props().firstName);
   });
 });
