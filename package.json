@@ -1,6 +1,6 @@
 {
   "name": "valynx",
-  "version": "0.0.6",
+  "version": "0.0.7",
   "description": "State management based on 'value links', an object-friendly twist on functional lenses.",
   "main": "dist/index.js",
   "type": "module",

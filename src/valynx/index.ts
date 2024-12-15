@@ -52,7 +52,7 @@ export type ValueLink<T> = SettableValue<T> & {
   /**
    * Get a record of value links to each property
    */
-  props: () => PropLinks<T>;
+  props: (keys?: string[]) => PropLinks<T>;
 
   // Array methods
 
@@ -116,10 +116,10 @@ export const arrayItem = memoize(
  */
 export const recordProp = memoize(
   <T, K extends AnyKeyOf<T>>(key: K): Lens<T, AnyValueOf<T, K>> => [
-    (record) => record[key] as AnyValueOf<T, K>,
+    (record) => record?.[key] as AnyValueOf<T, K>,
     (record, updater) => ({
-      ...record,
-      [key]: updater(record[key] as AnyValueOf<T, K>),
+      ...(record ?? ({} as T)),
+      [key]: updater(record?.[key] as AnyValueOf<T, K>),
     }),
   ]
 );
@@ -223,11 +223,14 @@ export function createValueLink<T>(
   const prop = (name: AnyKeyOf<T>) => apply(recordProp(name), typeof name === "string" ? name : undefined);
 
   // memoize but reset for value
-  const props = () => {
-    if (typeof value !== "object" || value === null) return {};
+  const props = (keys?: string[]) => {
+    if (!keys) {
+      if (typeof value !== "object" || value === null) return {};
+      keys = Object.keys(value);
+    }
 
     let built: any = {};
-    Object.keys(value).forEach((name) => {
+    keys.forEach((name) => {
       built[name] = apply(recordProp(name as AnyKeyOf<T>), typeof name === "string" ? name : undefined);
     });
     return built;
